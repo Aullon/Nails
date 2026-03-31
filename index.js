@@ -13,12 +13,10 @@ const PHONE_ID = process.env.PHONE_NUMBER_ID;
 const conversations = {};
 const remindersSent = new Set();
 
-// ── Turnos válidos ────────────────────────────────────────────────
-// Mañana: 08:00-10:00, 10:00-12:00
-// Tarde:  13:00-15:00, 15:00-17:00, 17:00-19:00
+// Turnos fijos del negocio (hora de inicio)
 const TURNOS = [8, 10, 13, 15, 17];
 
-// ── Obtener citas ocupadas desde Google Calendar ──────────────────
+// ── Consultar turnos ocupados en Google Calendar ──────────────────
 async function getBookedSlots(fecha) {
   try {
     const auth = new google.auth.GoogleAuth({
@@ -38,37 +36,39 @@ async function getBookedSlots(fecha) {
       orderBy: 'startTime'
     });
 
-    const booked = [];
-    for (const e of (events.data.items || [])) {
-      const startHour = new Date(e.start.dateTime).getHours();
-      booked.push(startHour);
-    }
-    return booked;
+    // Retorna las horas de inicio de todos los eventos del día
+    return (events.data.items || []).map(e => new Date(e.start.dateTime).getHours());
   } catch (e) {
     console.error('Error leyendo Calendar:', e.message);
     return [];
   }
 }
 
+// ── Verificar si un turno específico está libre ───────────────────
+async function isTurnoLibre(fecha, hora) {
+  const ocupados = await getBookedSlots(fecha);
+  return !ocupados.includes(hora);
+}
+
 // ── Construir prompt con disponibilidad real ──────────────────────
-async function buildSystemPrompt(from) {
-  // Calcular disponibilidad para hoy y los próximos 7 días
+async function buildSystemPrompt() {
   let disponibilidad = '';
   const today = new Date();
 
   for (let i = 0; i <= 7; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    const dow = d.getDay();
-    if (dow === 0) continue; // Sin domingos
+    if (d.getDay() === 0) continue; // Sin domingos
 
     const fechaKey = formatDateKey(d);
     const ocupados = await getBookedSlots(fechaKey);
-    const libres = TURNOS.filter(h => !ocupados.includes(h));
+    const libres   = TURNOS.filter(h => !ocupados.includes(h));
 
     if (libres.length > 0) {
-      const nombresLibres = libres.map(h => `${String(h).padStart(2,'0')}:00-${String(h+2).padStart(2,'0')}:00`).join(', ');
-      disponibilidad += `\n  ${formatFecha(fechaKey)}: ${nombresLibres}`;
+      const slots = libres.map(h =>
+        `${String(h).padStart(2,'0')}:00-${String(h+2).padStart(2,'0')}:00`
+      ).join(', ');
+      disponibilidad += `\n  ${formatFecha(fechaKey)}: ${slots}`;
     } else {
       disponibilidad += `\n  ${formatFecha(fechaKey)}: Sin disponibilidad`;
     }
@@ -76,85 +76,73 @@ async function buildSystemPrompt(from) {
 
   return `Eres el asistente virtual del salón Natalia Tovar Nails Studio en Neiva, Colombia.
 Tu comunicación es formal, cordial y profesional. Tratas a las clientas de "usted".
-Eres eficiente, precisa y amable, pero sin exageraciones ni palabras cariñosas.
 
-HORARIO DE ATENCIÓN: Lunes a Sábado (NO domingos ni festivos)
-Los turnos son FIJOS e inamovibles, cada uno dura exactamente 2 horas:
-  - Turno 1: 08:00 a 10:00
-  - Turno 2: 10:00 a 12:00
-  - Turno 3: 13:00 a 15:00
-  - Turno 4: 15:00 a 17:00
-  - Turno 5: 17:00 a 19:00
+REGLA ABSOLUTA — MUY IMPORTANTE:
+Solo hay UNA persona atendiendo en el salón.
+Por eso solo se puede atender UNA clienta por turno, sin importar el procedimiento.
+Si un turno ya tiene una cita, está COMPLETAMENTE BLOQUEADO para cualquier otra persona.
+NUNCA ofrezcas un turno ocupado, sin excepción.
 
-REGLA CRÍTICA DE DISPONIBILIDAD:
-Solo puedes ofrecer turnos que estén LIBRES según el calendario real.
-NUNCA ofrezcas un turno que ya esté ocupado.
-Si un turno está ocupado, NO lo menciones como opción.
+TURNOS FIJOS (cada uno dura exactamente 2 horas):
+  Turno 1: 08:00 - 10:00
+  Turno 2: 10:00 - 12:00
+  Turno 3: 13:00 - 15:00
+  Turno 4: 15:00 - 17:00
+  Turno 5: 17:00 - 19:00
 
-DISPONIBILIDAD ACTUAL (próximos 7 días):
+DISPONIBILIDAD REAL — PRÓXIMOS 7 DÍAS:
 ${disponibilidad}
 
-SERVICIOS — cuando pregunten, muestra SOLO los nombres, nunca el precio:
-• Tradicional Pies
-• Tradicional Manos
-• Combo Tradicional
-• Semi Pies
-• Semi Manos
-• Rubber Decorado
-• Rubber Elaborado
-• Dipping
-• Recubrimiento
-• Press On
-• Poli Gel
-• Reparación
-• Retiro de Otro Lugar
-• 1 Uña
-• Tradicional / Reparación / Decorado
-• Manos Combo
-• Jelly Spa
+SERVICIOS (muestre solo nombres, nunca el precio a menos que pregunten):
+• Tradicional Pies        • Tradicional Manos
+• Combo Tradicional       • Semi Pies
+• Semi Manos              • Rubber Decorado
+• Rubber Elaborado        • Dipping
+• Recubrimiento           • Press On
+• Poli Gel                • Reparación
+• Retiro de Otro Lugar    • 1 Uña
+• Tradicional/Reparación/Decorado
+• Manos Combo             • Jelly Spa
 
-PRECIOS (solo informe si la clienta pregunta explícitamente):
-Tradicional Pies: $25.000 | Tradicional Manos: $25.000 | Combo Tradicional: $45.000
-Semi Pies: $40.000 | Semi Manos: $50.000 | Rubber Decorado: $60.000
-Rubber Elaborado: $70.000 | Dipping: $70.000 | Recubrimiento: $85.000
-Press On: $85.000 | Poli Gel: $110.000 | Reparación: $5.000
-Retiro de Otro Lugar: $15.000 | 1 Uña: $7.000
-Tradicional / Reparación / Decorado: $25.000 | Manos Combo: $20.000 | Jelly Spa: $20.000
+PRECIOS (solo si la clienta pregunta explícitamente):
+Tradicional Pies $25.000 | Tradicional Manos $25.000 | Combo Tradicional $45.000
+Semi Pies $40.000 | Semi Manos $50.000 | Rubber Decorado $60.000
+Rubber Elaborado $70.000 | Dipping $70.000 | Recubrimiento $85.000
+Press On $85.000 | Poli Gel $110.000 | Reparación $5.000
+Retiro de Otro Lugar $15.000 | 1 Uña $7.000
+Tradicional/Reparación/Decorado $25.000 | Manos Combo $20.000 | Jelly Spa $20.000
 
 FLUJO PARA AGENDAR:
 1. Preguntar qué servicio desea
 2. Preguntar la fecha de preferencia
-3. Mostrar SOLO los turnos libres de esa fecha (consultando la disponibilidad de arriba)
-4. Pedir nombre completo
-5. Confirmar la cita con todos los datos antes de ejecutar el comando
+3. Mostrar ÚNICAMENTE los turnos libres de esa fecha
+4. Si todos los turnos de esa fecha están ocupados, decir claramente que no hay disponibilidad y sugerir otra fecha
+5. Pedir nombre completo
+6. Confirmar todos los datos con la clienta antes de ejecutar el comando
 
 FLUJO PARA CANCELAR:
 1. Solicitar nombre completo
-2. Solicitar fecha y hora de la cita
-3. Confirmar con la clienta antes de proceder
-4. Ejecutar el comando de cancelación
+2. Solicitar fecha y hora
+3. Confirmar antes de proceder
 
-COMANDOS DEL SISTEMA — agrégalos al final de tu respuesta, la clienta NO los ve:
+COMANDOS DEL SISTEMA (al final del mensaje, la clienta NO los ve):
 
-Para AGENDAR (solo cuando ya tienes nombre, fecha, hora Y servicio confirmados):
+Para AGENDAR (solo cuando ya tienes nombre, fecha, hora y servicio confirmados):
 [AGENDAR:nombre completo|fecha YYYY-MM-DD|hora HH|servicio]
-Ejemplo: [AGENDAR:Laura García|2026-04-05|8|Rubber Decorado]
 
 Para CANCELAR:
 [CANCELAR:nombre completo|fecha YYYY-MM-DD|hora HH]
-Ejemplo: [CANCELAR:Laura García|2026-04-05|8]
 
-REGLAS DE CONDUCTA:
-- Tono siempre formal y cordial, nunca efusivo
-- No usar palabras como "amor", "hermosa", "mi cielo", "divino"
-- No usar signos de exclamación en exceso
-- Confirmar disponibilidad real antes de ofrecer un turno
-- Si no hay disponibilidad en la fecha solicitada, ofrecer la fecha más próxima con turnos libres
+REGLAS DE COMUNICACIÓN:
+- Formal y cordial, nunca efusivo
+- No usar "amor", "hermosa", "mi cielo" ni similares
+- Si un turno está ocupado: decir exactamente "Ese horario ya se encuentra ocupado. Le ofrecemos los siguientes turnos disponibles: ..."
+- Si no hay disponibilidad en la fecha solicitada: "Para esa fecha no contamos con disponibilidad. La fecha más próxima disponible es..."
 - Respuestas concisas, máximo 5 líneas
-- Si preguntan si es un bot, indicar que es el asistente virtual de Natalia Tovar Nails Studio`;
+- Si preguntan si es un bot: indicar que es el asistente virtual de Natalia Tovar Nails Studio`;
 }
 
-// ── Helpers de fecha ──────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────
 function formatDateKey(d) {
   return d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -162,8 +150,8 @@ function formatDateKey(d) {
 }
 
 function formatFecha(fecha) {
-  const dias   = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  const meses  = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const dias  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const d = new Date(fecha + 'T12:00:00');
   return `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
 }
@@ -194,8 +182,7 @@ app.post('/webhook', async (req, res) => {
     conversations[from].push({ role: 'user', content: text });
     if (conversations[from].length > 20) conversations[from] = conversations[from].slice(-20);
 
-    // Construir prompt con disponibilidad real en tiempo real
-    const systemPrompt = await buildSystemPrompt(from);
+    const systemPrompt = await buildSystemPrompt();
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -212,24 +199,30 @@ app.post('/webhook', async (req, res) => {
       const [, nombre, fecha, hora, servicio] = agendarMatch;
       const horaInt = parseInt(hora);
 
-      // Verificar UNA VEZ MÁS que el turno sigue libre antes de guardar
-      const ocupados = await getBookedSlots(fecha);
-      if (ocupados.includes(horaInt)) {
-        reply = reply.replace(/\[AGENDAR:[^\]]+\]/g, '').trim();
+      // Verificación final: confirmar que el turno sigue libre
+      const libre = await isTurnoLibre(fecha, horaInt);
+      reply = reply.replace(/\[AGENDAR:[^\]]+\]/g, '').trim();
+
+      if (!libre) {
+        // Turno ocupado en el último momento — buscar alternativas
+        const ocupados = await getBookedSlots(fecha);
+        const alternativas = TURNOS.filter(h => !ocupados.includes(h));
+        const textoAlternativas = alternativas.length > 0
+          ? `Los turnos disponibles para esa fecha son: ${alternativas.map(h => `${String(h).padStart(2,'0')}:00-${String(h+2).padStart(2,'0')}:00`).join(', ')}.`
+          : `No hay más turnos disponibles para esa fecha.`;
+
         await sendWhatsApp(from,
-          `Lo sentimos, el turno de las ${String(horaInt).padStart(2,'0')}:00 del ${formatFecha(fecha)} acaba de ser ocupado.\n` +
-          `Por favor indíquenos otra hora de su preferencia.`
+          `Ese horario ya se encuentra ocupado.\n${textoAlternativas}\n¿Cuál prefiere?`
         );
       } else {
         await addToGoogleCalendar(nombre, fecha, horaInt, servicio, from);
-        reply = reply.replace(/\[AGENDAR:[^\]]+\]/g, '').trim();
         await sendWhatsApp(from,
           `*Cita confirmada*\n\n` +
           `Nombre: ${nombre}\n` +
           `Servicio: ${servicio}\n` +
           `Fecha: ${formatFecha(fecha)}\n` +
           `Hora: ${String(horaInt).padStart(2,'0')}:00 - ${String(horaInt+2).padStart(2,'0')}:00\n\n` +
-          `Recibirá un recordatorio una hora antes de su cita. ¡Hasta pronto!`
+          `Recibirá un recordatorio una hora antes de su cita.`
         );
       }
     }
@@ -307,7 +300,7 @@ async function addToGoogleCalendar(nombre, fecha, hora, servicio, phone) {
 
     console.log(`✅ Agendada: ${nombre} — ${fecha} ${hora}:00 — ${servicio}`);
 
-    // Recordatorio WhatsApp 1 hora antes
+    // Recordatorio WhatsApp 1 hora antes a la clienta
     const msHastaRecordatorio = start.getTime() - Date.now() - (60 * 60 * 1000);
     if (msHastaRecordatorio > 0) {
       setTimeout(async () => {
@@ -319,8 +312,8 @@ async function addToGoogleCalendar(nombre, fecha, hora, servicio, phone) {
               `Recordatorio de Natalia Tovar Nails Studio\n\n` +
               `Le informamos que en *1 hora* tiene su cita:\n\n` +
               `Servicio: ${servicio}\n` +
-              `Hora: ${String(hora).padStart(2,'0')}:00\n\n` +
-              `La esperamos. ¡Hasta pronto!`
+              `Hora: ${String(hora).padStart(2,'00')}:00 - ${String(hora+2).padStart(2,'00')}:00\n\n` +
+              `La esperamos.`
             );
             console.log(`🔔 Recordatorio enviado a ${phone}`);
           } catch (e) {
