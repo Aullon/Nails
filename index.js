@@ -54,6 +54,8 @@ async function isTurnoLibre(fecha, hora) {
 async function buildSystemPrompt() {
   let disponibilidad = '';
   const today = new Date();
+  const fechaHoy = formatDateKey(today);
+  const diaHoy = formatFecha(fechaHoy);
 
   for (let i = 0; i <= 7; i++) {
     const d = new Date(today);
@@ -76,6 +78,11 @@ async function buildSystemPrompt() {
 
   return `Eres el asistente virtual del salón Natalia Tovar Nails Studio en Neiva, Colombia.
 Tu comunicación es formal, cordial y profesional. Tratas a las clientas de "usted".
+
+FECHA DE HOY: ${diaHoy} — ${fechaHoy} — AÑO 2026.
+REGLA CRÍTICA DE FECHAS: Todas las citas deben agendarse en 2026 o en el futuro.
+NUNCA agendes en 2025 ni en fechas que ya pasaron.
+Si la clienta dice "el viernes", "la próxima semana" o no especifica año, calcula la fecha correcta a partir de hoy (${fechaHoy}) y usa el año 2026.
 
 REGLA ABSOLUTA — MUY IMPORTANTE:
 Solo hay UNA persona atendiendo en el salón.
