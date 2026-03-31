@@ -10,57 +10,100 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WA_TOKEN = process.env.WA_TOKEN;
 const PHONE_ID = process.env.PHONE_NUMBER_ID;
 
-// Memoria temporal de conversaciones
 const conversations = {};
+const remindersSent = new Set();
 
 // ── Sistema de prompt ──────────────────────────────────────────────
-const SYSTEM_PROMPT = `Eres el agente de IA de Nails Studio, salón de uñas en Neiva, Colombia.
-Eres amigable, cálida y usas español colombiano natural. Usas emojis con moderación 💅.
+const SYSTEM_PROMPT = `Eres Natalia Tovar, dueña y estilista de tu propio salón Natalia Tovar Nails Studio en Neiva, Colombia.
+Eres súper carismática, alegre, cercana y apasionada por las uñas 💅
+Hablas como una amiga colombiana: cálida, con energía, usas emojis con gracia pero sin exagerar.
+Tratas a todas tus clientas de "amor", "hermosa", "mi cielo" o por su nombre cuando lo sabes.
 
-HORARIO: Lunes-Sábado
-- Mañana: 07:00 y 09:00 (cada turno dura 2 horas)
-- Tarde: 13:00, 15:00 y 16:00 (cada turno dura 2 horas, último termina 18:00)
-- NO hay servicio domingos ni festivos
+TU PERSONALIDAD:
+- Recibes a cada clienta con entusiasmo genuino
+- Amas tu trabajo y se nota en cada mensaje
+- Eres profesional pero nunca fría
+- Si alguien pregunta por un servicio, lo describes con emoción
+- Si hay disponibilidad, la ofreces de manera tentadora
+- Usas frases como "¡Eso te va a quedar divino!", "Ese servicio es espectacular", "Vas a quedar hermosa"
+- Si alguien pregunta si eres un bot, di que eres Natalia pero que usas un asistente inteligente para responder más rápido
 
-SERVICIOS Y PRECIOS (COP):
-- Manicure clásica: $25.000
-- Uñas en gel: $60.000-$80.000
-- Uñas acrílicas: $80.000-$120.000
-- Nail art / diseños: +$20.000-$40.000 adicional
-- Pedicure: $35.000-$45.000
-- Retoque gel: $40.000
+HORARIO DE ATENCIÓN: Lunes a Sábado
+- Mañana: 08:00 y 10:00 (cada turno dura 2 horas, último termina 12:00)
+- Tarde: 13:00, 15:00 y 17:00 (cada turno dura 2 horas, último termina 19:00)
+- NO hay servicio los domingos ni festivos
+
+SERVICIOS — cuando te pregunten qué servicios ofreces, muestra SOLO la lista de nombres, SIN precios:
+
+💅 Nuestros servicios:
+• Tradicional Pies
+• Tradicional Manos
+• Combo Tradicional
+• Semi Pies
+• Semi Manos
+• Rubber Decorado
+• Rubber Elaborado
+• Dipping
+• Recubrimiento
+• Press On
+• Poli Gel
+• Reparación
+• Retiro de Otro Lugar
+• 1 Uña
+• Tradicional / Reparación / Decorado
+• Manos Combo
+• Jelly Spa
+
+PRECIOS (solo di el precio si la clienta lo pregunta explícitamente):
+- Tradicional Pies: $25.000
+- Tradicional Manos: $25.000
+- Combo Tradicional: $45.000
+- Semi Pies: $40.000
+- Semi Manos: $50.000
+- Rubber Decorado: $60.000
+- Rubber Elaborado: $70.000
+- Dipping: $70.000
+- Recubrimiento: $85.000
+- Press On: $85.000
+- Poli Gel: $110.000
+- Reparación: $5.000
+- Retiro de Otro Lugar: $15.000
+- 1 Uña: $7.000
+- Tradicional / Reparación / Decorado: $25.000
+- Manos Combo: $20.000
+- Jelly Spa: $20.000
 
 FLUJO PARA AGENDAR:
-1. Pregunta qué servicio quiere
-2. Pregunta la fecha deseada
-3. Muestra los horarios disponibles del día
-4. Pide nombre completo
-5. Confirma la cita
+1. Pregunta con entusiasmo qué servicio le interesa
+2. Pregunta qué fecha le queda bien
+3. Muestra los horarios disponibles de forma atractiva
+4. Pide el nombre completo con amabilidad
+5. Confirma la cita con emoción y calidez
 
 FLUJO PARA CANCELAR:
-1. Pregunta el nombre completo de la clienta
-2. Pregunta la fecha y hora de la cita
-3. Confirma que vas a cancelar
-4. Ejecuta el comando de cancelación
+1. Con comprensión pregunta el nombre completo
+2. Pregunta fecha y hora de la cita
+3. Confirma antes de cancelar
+4. Deja la puerta abierta para reagendar con cariño
 
-COMANDOS DEL SISTEMA (agrégalos al final de tu respuesta, el usuario no los ve):
+COMANDOS DEL SISTEMA — agrégalos al FINAL de tu respuesta, el usuario NO los ve:
 
 Para AGENDAR una cita confirmada:
 [AGENDAR:nombre completo|fecha YYYY-MM-DD|hora HH|servicio]
-Ejemplo: [AGENDAR:Laura García|2026-04-01|9|Uñas en gel]
+Ejemplo: [AGENDAR:Laura García|2026-04-01|8|Rubber Decorado]
 
 Para CANCELAR una cita:
 [CANCELAR:nombre completo|fecha YYYY-MM-DD|hora HH]
-Ejemplo: [CANCELAR:Laura García|2026-04-01|9]
+Ejemplo: [CANCELAR:Laura García|2026-04-01|8]
 
-Para REPROGRAMAR: primero cancela con [CANCELAR] y luego agenda con [AGENDAR] en el mismo mensaje.
+Para REPROGRAMAR: pon primero [CANCELAR] y luego [AGENDAR] en el mismo mensaje.
 
 REGLAS IMPORTANTES:
-- Nunca inventes horarios, siempre pregunta qué fecha quiere la clienta
-- Confirma siempre antes de cancelar
-- Si reprograman, confirma la nueva fecha antes de cancelar la anterior
-- Respuestas cortas y amigables (máximo 5 líneas)
-- Siempre en español colombiano, tuteo cálido`;
+- NUNCA digas el precio a menos que te lo pregunten directamente
+- Siempre confirma con la clienta antes de ejecutar una cancelación
+- Respuestas cortas y cálidas, máximo 5 líneas
+- Habla siempre como Natalia, con personalidad, nunca como un robot
+- Español colombiano siempre`;
 
 // ── Webhook verification ──────────────────────────────────────────
 app.get('/webhook', (req, res) => {
@@ -101,21 +144,16 @@ app.post('/webhook', async (req, res) => {
     const agendarMatch = reply.match(/\[AGENDAR:([^|]+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/);
     if (agendarMatch) {
       const [, nombre, fecha, hora, servicio] = agendarMatch;
-      const eventId = await addToGoogleCalendar(nombre, fecha, parseInt(hora), servicio, from);
+      await addToGoogleCalendar(nombre, fecha, parseInt(hora), servicio, from);
       reply = reply.replace(/\[AGENDAR:[^\]]+\]/g, '').trim();
 
-      const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-      const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-      const fechaObj = new Date(fecha + 'T12:00:00');
-      const fechaTexto = `${dias[fechaObj.getDay()]} ${fechaObj.getDate()} ${meses[fechaObj.getMonth()]}`;
-
       await sendWhatsApp(from,
-        `✅ *¡Cita confirmada!*\n\n` +
+        `🎉 *¡Listo amor, quedaste agendada!* 💅\n\n` +
         `👤 ${nombre}\n` +
-        `💅 ${servicio}\n` +
-        `📅 ${fechaTexto} a las ${String(hora).padStart(2,'0')}:00\n` +
+        `✨ ${servicio}\n` +
+        `📅 ${formatFecha(fecha)} a las ${String(hora).padStart(2,'0')}:00\n` +
         `⏰ Duración: 2 horas\n\n` +
-        `Recibirás un recordatorio 24 horas antes 🔔`
+        `Te mando un recordatorio una horita antes 🔔 ¡Nos vemos hermosa! 💖`
       );
     }
 
@@ -126,21 +164,17 @@ app.post('/webhook', async (req, res) => {
       const cancelado = await cancelFromGoogleCalendar(nombre, fecha, parseInt(hora));
       reply = reply.replace(/\[CANCELAR:[^\]]+\]/g, '').trim();
 
-      const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-      const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-      const fechaObj = new Date(fecha + 'T12:00:00');
-      const fechaTexto = `${dias[fechaObj.getDay()]} ${fechaObj.getDate()} ${meses[fechaObj.getMonth()]}`;
-
       if (cancelado) {
         await sendWhatsApp(from,
-          `❌ *Cita cancelada*\n\n` +
+          `❌ *Cita cancelada, mi cielo*\n\n` +
           `👤 ${nombre}\n` +
-          `📅 ${fechaTexto} a las ${String(hora).padStart(2,'0')}:00\n\n` +
-          `Si quieres reagendar estamos para servirte 💅`
+          `📅 ${formatFecha(fecha)} a las ${String(hora).padStart(2,'0')}:00\n\n` +
+          `Cuando quieras volver a agendar aquí estoy 💅💖`
         );
       } else {
         await sendWhatsApp(from,
-          `⚠️ No encontré una cita para *${nombre}* el ${fechaTexto} a las ${String(hora).padStart(2,'0')}:00.\n\nVerifica el nombre y la fecha e intenta de nuevo.`
+          `⚠️ Amor, no encontré esa cita en el sistema.\n` +
+          `Verifica el nombre y la fecha e intentamos de nuevo 🙏`
         );
       }
     }
@@ -164,6 +198,14 @@ async function sendWhatsApp(to, text) {
   );
 }
 
+// ── Formatear fecha bonita ────────────────────────────────────────
+function formatFecha(fecha) {
+  const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const d = new Date(fecha + 'T12:00:00');
+  return `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
+}
+
 // ── Google Calendar: crear evento ────────────────────────────────
 async function addToGoogleCalendar(nombre, fecha, hora, servicio, phone) {
   try {
@@ -176,28 +218,50 @@ async function addToGoogleCalendar(nombre, fecha, hora, servicio, phone) {
     const start = new Date(`${fecha}T${String(hora).padStart(2,'0')}:00:00-05:00`);
     const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
-    const event = await calendar.events.insert({
+    await calendar.events.insert({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
       requestBody: {
         summary: `💅 ${nombre} — ${servicio}`,
-        description: `Clienta: ${nombre}\nServicio: ${servicio}\nTeléfono: +${phone}\nAgendado vía WhatsApp Bot`,
+        description: `Clienta: ${nombre}\nServicio: ${servicio}\nTeléfono: +${phone}\nAgendado vía WhatsApp Bot — Natalia Tovar Nails Studio`,
         start: { dateTime: start.toISOString(), timeZone: 'America/Bogota' },
         end: { dateTime: end.toISOString(), timeZone: 'America/Bogota' },
         reminders: {
           useDefault: false,
           overrides: [
-            { method: 'popup', minutes: 1440 },  // 24h antes
-            { method: 'popup', minutes: 60 }      // 1h antes
+            { method: 'popup', minutes: 1440 },
+            { method: 'popup', minutes: 60 }
           ]
         }
       }
     });
 
-    console.log(`✅ Cita agendada en Calendar: ${nombre} - ${fecha} ${hora}:00`);
-    return event.data.id;
+    console.log(`✅ Agendada: ${nombre} — ${fecha} ${hora}:00 — ${servicio}`);
+
+    // ── Recordatorio WhatsApp 1 hora antes a la clienta ──────────
+    const msHastaRecordatorio = start.getTime() - Date.now() - (60 * 60 * 1000);
+    if (msHastaRecordatorio > 0) {
+      setTimeout(async () => {
+        const key = `${phone}_${fecha}_${hora}`;
+        if (!remindersSent.has(key)) {
+          remindersSent.add(key);
+          try {
+            await sendWhatsApp(phone,
+              `🔔 *¡Hola hermosa! Soy Natalia de Natalia Tovar Nails Studio* 💅\n\n` +
+              `En *1 hora* tienes tu cita:\n\n` +
+              `✨ ${servicio}\n` +
+              `⏰ Hoy a las ${String(hora).padStart(2,'0')}:00\n\n` +
+              `¡Te esperamos con todo el amor! 💖`
+            );
+            console.log(`🔔 Recordatorio enviado a ${phone}`);
+          } catch (e) {
+            console.error('Error enviando recordatorio:', e.message);
+          }
+        }
+      }, msHastaRecordatorio);
+    }
+
   } catch (e) {
-    console.error('Error agendando en Google Calendar:', e.message);
-    return null;
+    console.error('Error Google Calendar (agendar):', e.message);
   }
 }
 
@@ -210,7 +274,6 @@ async function cancelFromGoogleCalendar(nombre, fecha, hora) {
     });
     const calendar = google.calendar({ version: 'v3', auth });
 
-    // Buscar el evento por fecha y hora
     const start = new Date(`${fecha}T${String(hora).padStart(2,'0')}:00:00-05:00`);
     const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
@@ -223,27 +286,26 @@ async function cancelFromGoogleCalendar(nombre, fecha, hora) {
     });
 
     if (!events.data.items || events.data.items.length === 0) {
-      console.log(`⚠️ No se encontró evento para ${nombre} el ${fecha} a las ${hora}:00`);
+      console.log(`⚠️ No encontrado: ${nombre} — ${fecha} ${hora}:00`);
       return false;
     }
 
-    // Buscar el evento que coincida con el nombre
     const nombreLower = nombre.toLowerCase();
     const evento = events.data.items.find(e =>
       e.summary && e.summary.toLowerCase().includes(nombreLower)
-    ) || events.data.items[0]; // Si no coincide nombre exacto, toma el primero de ese horario
+    ) || events.data.items[0];
 
     await calendar.events.delete({
       calendarId: process.env.GOOGLE_CALENDAR_ID,
       eventId: evento.id
     });
 
-    console.log(`❌ Cita cancelada en Calendar: ${nombre} - ${fecha} ${hora}:00`);
+    console.log(`❌ Cancelada: ${nombre} — ${fecha} ${hora}:00`);
     return true;
   } catch (e) {
-    console.error('Error cancelando en Google Calendar:', e.message);
+    console.error('Error Google Calendar (cancelar):', e.message);
     return false;
   }
 }
 
-app.listen(process.env.PORT || 3000, () => console.log('Nails Studio Bot activo ✅'));
+app.listen(process.env.PORT || 3000, () => console.log('Natalia Tovar Nails Studio Bot activo ✅'));
